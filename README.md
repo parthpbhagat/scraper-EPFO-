@@ -137,6 +137,69 @@ month_year=July_2026
 
 Large raw HTML fields are hidden by default and returned as `*_length` plus `*_preview`. Use `include_raw=true` when you need the complete raw HTML or traceback.
 
+## Deploy on Ubuntu/aaPanel with PM2
+
+Open the aaPanel terminal or SSH into the server, then run:
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip nodejs npm
+sudo npm install -g pm2
+```
+
+Clone the project:
+
+```bash
+cd /www/wwwroot
+git clone https://github.com/parthpbhagat/scraper-EPFO-.git epfo-scraper
+cd epfo-scraper
+```
+
+Create Python environment:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Create `.env`:
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Fill your MySQL/TiDB credentials in `.env`. Do not upload this file to GitHub.
+
+Start the API in background with PM2:
+
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+```
+
+Check status/logs:
+
+```bash
+pm2 status
+pm2 logs epfo-api
+```
+
+Test locally on the server:
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+If you want to access the API from outside the server, open/reverse-proxy port `8000` from aaPanel/Nginx/firewall and use:
+
+```text
+http://SERVER_IP:8000/api/company-csv?company_name=Company%20Name
+```
+
 ## Tables Created
 
 - `scrape_runs`
