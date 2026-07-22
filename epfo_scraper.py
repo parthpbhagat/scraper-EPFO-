@@ -617,18 +617,22 @@ class MySQLStore:
 
     def check_connection(self) -> None:
         try:
+            if not self.conn or not self.conn.is_connected():
+                self.reconnect()
+                return
             self.conn.ping(reconnect=True, attempts=3, delay=1)
             cursor = self.conn.cursor()
             cursor.execute(f"USE {mysql_name(self.database)}")
             cursor.close()
         except Exception:
             try:
-                self.conn.close()
+                if self.conn:
+                    self.conn.close()
             except Exception:
                 pass
             self.reconnect()
 
-    def reconnect(self) -> None:
+    def reconnect(self, retries: int = 5, delay: float = 2.0) -> None:
         kwargs: dict[str, Any] = {
             "host": self.host,
             "port": self.port,
@@ -641,8 +645,17 @@ class MySQLStore:
         if self.ssl_ca:
             kwargs["ssl_ca"] = self.ssl_ca
             kwargs["ssl_verify_cert"] = self.ssl_verify
-        self.conn = mysql.connector.connect(**kwargs)
-        self.conn.autocommit = False
+        
+        for attempt in range(retries):
+            try:
+                self.conn = mysql.connector.connect(**kwargs)
+                self.conn.autocommit = False
+                return
+            except Exception as exc:
+                print(f"Database connection attempt {attempt + 1} failed: {exc}. Retrying in {delay} seconds...")
+                if attempt == retries - 1:
+                    raise exc
+                time.sleep(delay)
 
     def ensure_database(self) -> None:
         cursor = self.conn.cursor()
