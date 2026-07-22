@@ -40,6 +40,14 @@ You can copy `compony.example.txt` to `compony.txt` and replace the names.
 python epfo_scraper.py
 ```
 
+If `compony.txt` is missing:
+
+```powershell
+copy compony.example.txt compony.txt
+```
+
+Then edit `compony.txt` and add one company name per line.
+
 Useful options:
 
 ```powershell
@@ -54,6 +62,8 @@ python epfo_scraper.py --no-search-variants
 By default `--max-captcha-attempts` is `0`, so a wrong CAPTCHA keeps loading a new CAPTCHA and asking again until the correct CAPTCHA is entered. It will not move to the next search term or company while EPFO says the CAPTCHA is invalid.
 
 If the exact company name returns no result, the scraper tries a few safer shorter search terms, for example removing `Private Limited` / `Limited` and punctuation. Each new search term needs a fresh manual CAPTCHA because EPFO requires it.
+
+Do not run `epfo_scraper.py` with PM2/background because CAPTCHA needs interactive keyboard input. Use PM2 for `api_server.py` only.
 
 ## JSON API
 

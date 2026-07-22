@@ -1024,7 +1024,15 @@ def prompt_captcha(company_name: str, search_term: str, captcha_path: Path, atte
     if open_file:
         open_captcha_file(captcha_path)
 
-    return input(f"CAPTCHA attempt {attempt}: ").strip()
+    if not sys.stdin.isatty():
+        print("CAPTCHA input is not available. Run epfo_scraper.py in an interactive terminal, not PM2/background.")
+        return "quit"
+
+    try:
+        return input(f"CAPTCHA attempt {attempt}: ").strip()
+    except EOFError:
+        print("CAPTCHA input was closed. Run epfo_scraper.py in an interactive terminal, not PM2/background.")
+        return "quit"
 
 
 def scrape_establishment_details(
@@ -1310,7 +1318,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     company_file = Path(args.company_file)
-    companies = read_company_names(company_file)
+    try:
+        companies = read_company_names(company_file)
+    except FileNotFoundError:
+        print(f"Company file not found: {company_file}")
+        print("Create compony.txt with one company name per line, or pass --company-file your_file.txt.")
+        print("Example: copy compony.example.txt compony.txt")
+        return 2
     if args.start_at < 1:
         args.start_at = 1
     if args.start_at > 1:
