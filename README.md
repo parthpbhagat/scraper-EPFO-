@@ -226,3 +226,9 @@ http://SERVER_IP:8000/api/company-csv?company_name=Company%20Name
 - All visible payment table rows in the returned HTML are parsed, including rows hidden behind client-side pagination.
 - If EPFO changes its `_HDIV_STATE_` URLs or HTML, rerun the program. It parses fresh URLs from the home/search/detail HTML each time.
 - If detail fetching fails often, reduce `--details-workers` to `1` or increase `--delay`.
+
+
+
+
+
+python epfo_scraper.py --company-file all_companies.txt --no-search-variants --skip-existing-statuses completed,searched,skipped --delay 1.5 --details-workers 1

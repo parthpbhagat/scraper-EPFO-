@@ -615,6 +615,35 @@ class MySQLStore:
     def close(self) -> None:
         self.conn.close()
 
+    def check_connection(self) -> None:
+        try:
+            self.conn.ping(reconnect=True, attempts=3, delay=1)
+            cursor = self.conn.cursor()
+            cursor.execute(f"USE {mysql_name(self.database)}")
+            cursor.close()
+        except Exception:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            self.reconnect()
+
+    def reconnect(self) -> None:
+        kwargs: dict[str, Any] = {
+            "host": self.host,
+            "port": self.port,
+            "user": self.user,
+            "password": self.password,
+            "database": self.database,
+            "charset": "utf8mb4",
+            "use_unicode": True,
+        }
+        if self.ssl_ca:
+            kwargs["ssl_ca"] = self.ssl_ca
+            kwargs["ssl_verify_cert"] = self.ssl_verify
+        self.conn = mysql.connector.connect(**kwargs)
+        self.conn.autocommit = False
+
     def ensure_database(self) -> None:
         cursor = self.conn.cursor()
         cursor.execute(
@@ -759,6 +788,7 @@ class MySQLStore:
             cursor.execute("ALTER TABLE company_queries ADD COLUMN matched_search_term VARCHAR(500) NULL AFTER company_name")
 
     def create_run(self, source_file: str, notes: str = "") -> int:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO scrape_runs (source_file, notes) VALUES (%s, %s)",
@@ -770,6 +800,7 @@ class MySQLStore:
         return run_id
 
     def finish_run(self, run_id: int, status: str, notes: str = "") -> None:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             "UPDATE scrape_runs SET finished_at = NOW(), status = %s, notes = CONCAT(COALESCE(notes, ''), %s) WHERE id = %s",
@@ -779,6 +810,7 @@ class MySQLStore:
         cursor.close()
 
     def create_company_query(self, run_id: int, query_order: int, company_name: str) -> int:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO company_queries (run_id, query_order, company_name) VALUES (%s, %s, %s)",
@@ -792,6 +824,7 @@ class MySQLStore:
     def find_existing_company_status(self, company_name: str, statuses: set[str]) -> tuple[str, int] | None:
         if not statuses:
             return None
+        self.check_connection()
         placeholders = ", ".join(["%s"] * len(statuses))
         cursor = self.conn.cursor()
         cursor.execute(
@@ -820,6 +853,7 @@ class MySQLStore:
         error_message: str | None = None,
         matched_search_term: str | None = None,
     ) -> None:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -839,6 +873,7 @@ class MySQLStore:
         cursor.close()
 
     def save_search_result(self, query_id: int, result: SearchResult) -> None:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -873,6 +908,7 @@ class MySQLStore:
         cursor.close()
 
     def save_raw_page(self, run_id: int, est_id: str, page_type: str, raw_html: str) -> None:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -893,6 +929,7 @@ class MySQLStore:
         section_name: str,
         records: list[SectionRecord],
     ) -> None:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -931,6 +968,7 @@ class MySQLStore:
     def save_payment_rows(self, est_id: str, rows: list[dict[str, str]]) -> None:
         if not rows:
             return
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.executemany(
             """
@@ -969,6 +1007,7 @@ class MySQLStore:
         error_message: str,
         traceback_text: str | None = None,
     ) -> None:
+        self.check_connection()
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -1104,6 +1143,7 @@ def process_company(
 
     for variant_index, search_term in enumerate(variants, start=1):
         variant_attempt = 0
+        use_auto_captcha = getattr(args, "auto_captcha", True)
         while True:
             captcha_path: Path | None = None
             if args.max_captcha_attempts > 0 and variant_attempt >= args.max_captcha_attempts:
@@ -1122,7 +1162,29 @@ def process_company(
             client.load_home()
 
             captcha_path = client.save_captcha(Path(args.captcha_dir), search_term, variant_attempt)
-            captcha = prompt_captcha(company_name, search_term, captcha_path, variant_attempt, args.open_captcha)
+            
+            captcha = ""
+            if use_auto_captcha:
+                try:
+                    from capchasolver import solve_captcha
+                    captcha = solve_captcha(captcha_path)
+                except Exception as exc:
+                    print(f"Auto-solve exception: {exc}")
+                
+                if captcha:
+                    print(f"Auto-solved CAPTCHA: {captcha}")
+                else:
+                    print("Auto-solve failed or returned empty. Retrying automatically...")
+                    close_captcha_image()
+                    if captcha_path is not None:
+                        try:
+                            captcha_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    continue
+
+            if not captcha:
+                captcha = prompt_captcha(company_name, search_term, captcha_path, variant_attempt, args.open_captcha)
 
             if captcha.lower() == "quit":
                 close_captcha_image()
@@ -1157,6 +1219,8 @@ def process_company(
             if captcha_error:
                 print(f"{captcha_error} A new CAPTCHA will be loaded. This company will not continue until CAPTCHA is correct.")
                 close_captcha_image()
+                if use_auto_captcha:
+                    print("Auto-solved CAPTCHA was incorrect. Retrying automatically...")
                 if captcha_path is not None:
                     try:
                         captcha_path.unlink(missing_ok=True)
@@ -1311,7 +1375,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_false",
         help="Fetch only the validity/payment section, not every View Details section.",
     )
-    parser.set_defaults(open_captcha=True, fetch_all_sections=True, search_variants=True)
+    parser.add_argument(
+        "--no-auto-captcha",
+        dest="auto_captcha",
+        action="store_false",
+        help="Do not attempt to automatically solve the CAPTCHA using the CAPTCHA solver.",
+    )
+    parser.set_defaults(open_captcha=True, fetch_all_sections=True, search_variants=True, auto_captcha=True)
     return parser.parse_args(argv)
 
 

@@ -23,8 +23,7 @@ company_cin_overrides.json
 all_companies.txt
 all_cin_overrides.json
 
-# Local CAPTCHA/OCR experiments are not part of the safe public project.
-capchasolver.py
+
 
 # Local assistant/project metadata
 .agents/
