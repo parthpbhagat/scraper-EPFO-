@@ -1335,7 +1335,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No company names found in {company_file}. Add one company name per line and run again.")
         return 2
 
-    db = MySQLStore()
+    try:
+        db = MySQLStore()
+    except mysql.connector.Error as exc:
+        print(f"Database connection failed: {exc}")
+        print("Check .env database values, TiDB/MySQL network access, firewall allowlist, and outbound port 4000/3306.")
+        print("If you are running on aaPanel/server, make sure the server IP is allowed by TiDB and the host can reach the DB.")
+        return 2
+
     client = EpfoClient(timeout=args.timeout, delay=args.delay)
     skip_statuses = {
         status.strip().lower()
