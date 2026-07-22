@@ -16,7 +16,7 @@ module.exports = {
     {
       name: "epfo-scraper",
       script: "epfo_scraper.py",
-      interpreter: "python",
+      interpreter: ".venv/bin/python",
       args: "--company-file all_companies.txt --no-search-variants --skip-existing-statuses completed,searched,skipped --delay 1.5 --details-workers 1",
       cwd: __dirname,
       autorestart: false,
